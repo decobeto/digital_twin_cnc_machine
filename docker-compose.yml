@@ -1,0 +1,101 @@
+# ==============================================================================
+# ECLIPSE BASYX V2 - INFRAESTRUTURA IIOT DIGITAL TWIN (AI4I 2020 CNC MILLING)
+# ==============================================================================
+# Arquitetura 100% InMemory (sem dependência externa de MongoDB e sem falhas de
+# sincronismo TCP/ClosedChannelException durante a inicialização):
+# 1. aas-registry (porta 8082)       -> eclipsebasyx/aas-registry-log-mem
+# 2. submodel-registry (porta 8083)  -> eclipsebasyx/submodel-registry-log-mem
+# 3. aas-discovery (porta 8084)      -> eclipsebasyx/aas-discovery
+# 4. aas-environment (porta 8081)    -> AAS Server + Submodel Server
+# 5. aas-web-ui (porta 3000)         -> Painel Administrativo Oficial BaSyx
+# ==============================================================================
+
+services:
+  # 1. BaSyx AAS Registry (In-Memory com log de eventos)
+  aas-registry:
+    image: eclipsebasyx/aas-registry-log-mem:2.0.0-SNAPSHOT
+    container_name: basyx-aas-registry
+    ports:
+      - "8082:8080"
+    environment:
+      SERVER_PORT: 8080
+      BASYX_CORS_ALLOWED_ORIGINS: "*"
+      BASYX_CORS_ALLOWED_METHODS: "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD"
+    networks:
+      - basyx-net
+    restart: unless-stopped
+
+  # 2. BaSyx Submodel Registry (In-Memory com log de eventos)
+  submodel-registry:
+    image: eclipsebasyx/submodel-registry-log-mem:2.0.0-SNAPSHOT
+    container_name: basyx-submodel-registry
+    ports:
+      - "8083:8080"
+    environment:
+      SERVER_PORT: 8080
+      BASYX_CORS_ALLOWED_ORIGINS: "*"
+      BASYX_CORS_ALLOWED_METHODS: "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD"
+    networks:
+      - basyx-net
+    restart: unless-stopped
+
+  # 3. BaSyx AAS Discovery Service (Mapeamento entre Asset ID / Product ID -> AAS ID)
+  aas-discovery:
+    image: eclipsebasyx/aas-discovery:2.0.0-SNAPSHOT
+    container_name: basyx-aas-discovery
+    ports:
+      - "8084:8081"
+    environment:
+      SERVER_PORT: 8081
+      BASYX_BACKEND: InMemory
+      BASYX_CORS_ALLOWED_ORIGINS: "*"
+      BASYX_CORS_ALLOWED_METHODS: "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD"
+    networks:
+      - basyx-net
+    restart: unless-stopped
+
+  # 4. BaSyx AAS Server & Submodel Server (AAS Environment)
+  # Nota: O carregamento do AAS/Submodelo e o registro nos Registries são feitos
+  # pelo simulador Python (cnc_simulator.py) logo após o servidor subir, evitando
+  # o bug 'java.nio.channels.ClosedChannelException' no boot do container!
+  aas-environment:
+    image: eclipsebasyx/aas-environment:2.0.0-SNAPSHOT
+    container_name: basyx-aas-environment
+    ports:
+      - "8081:8081"
+    environment:
+      SERVER_PORT: 8081
+      BASYX_BACKEND: InMemory
+      BASYX_EXTERNALURL: http://localhost:8081
+      BASYX_CORS_ALLOWED_ORIGINS: "*"
+      BASYX_CORS_ALLOWED_METHODS: "GET,POST,PUT,DELETE,PATCH,OPTIONS,HEAD"
+    volumes:
+      - ./aas:/application/aas
+    depends_on:
+      - aas-registry
+      - submodel-registry
+    networks:
+      - basyx-net
+    restart: unless-stopped
+
+  # 5. BaSyx Web UI (Painel administrativo oficial AAS na porta 3000)
+  aas-web-ui:
+    image: eclipsebasyx/aas-gui:v2-240801
+    container_name: basyx-web-ui
+    ports:
+      - "3000:3000"
+    environment:
+      AAS_REGISTRY_PATH: http://localhost:8082/shell-descriptors
+      SUBMODEL_REGISTRY_PATH: http://localhost:8083/submodel-descriptors
+      AAS_REPO_PATH: http://localhost:8081/shells
+      SUBMODEL_REPO_PATH: http://localhost:8081/submodels
+      AAS_DISCOVERY_PATH: http://localhost:8084/lookup/shells
+    depends_on:
+      - aas-environment
+    networks:
+      - basyx-net
+    restart: unless-stopped
+
+networks:
+  basyx-net:
+    driver: bridge

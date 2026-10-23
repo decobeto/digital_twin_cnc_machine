@@ -1,0 +1,1372 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Digital Twin IIoT — CNC Milling Machine (AI4I 2020 + Eclipse BaSyx)</title>
+  <style>
+    :root {
+      --bg-dark: #070b12;
+      --panel-bg: rgba(13, 20, 33, 0.84);
+      --panel-border: rgba(56, 189, 248, 0.25);
+      --text-primary: #f1f5f9;
+      --text-muted: #94a3b8;
+      --cyan: #38bdf8;
+      --green: #10b981;
+      --amber: #f59e0b;
+      --red: #ef4444;
+      --font-mono: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+      --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    }
+
+    * {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+      user-select: none;
+    }
+
+    body, html {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--bg-dark);
+      font-family: var(--font-sans);
+      color: var(--text-primary);
+    }
+
+    #canvas-container {
+      position: absolute;
+      inset: 0;
+      z-index: 1;
+    }
+
+    /* ==================== CAMADA HUD INDUSTRIAL ==================== */
+    .hud-layer {
+      position: absolute;
+      inset: 0;
+      z-index: 10;
+      pointer-events: none;
+      display: grid;
+      grid-template-columns: 350px 1fr 370px;
+      grid-template-rows: auto 1fr auto;
+      padding: 18px;
+      gap: 16px;
+    }
+
+    .hud-panel {
+      background: var(--panel-bg);
+      backdrop-filter: blur(14px);
+      -webkit-backdrop-filter: blur(14px);
+      border: 1px solid var(--panel-border);
+      border-radius: 10px;
+      padding: 16px;
+      pointer-events: auto;
+      box-shadow: 0 12px 32px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      transition: border-color 0.25s ease, box-shadow 0.25s ease;
+    }
+
+    .hud-panel.critical-alert {
+      border-color: rgba(239, 68, 68, 0.85);
+      box-shadow: 0 0 28px rgba(239, 68, 68, 0.35), inset 0 0 15px rgba(239, 68, 68, 0.15);
+    }
+
+    /* TOP BAR */
+    .hud-header {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 20px;
+    }
+
+    .brand-block {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+    }
+
+    .status-led {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 12px var(--green);
+      animation: pulseLed 2s infinite;
+    }
+
+    .status-led.fault {
+      background: var(--red);
+      box-shadow: 0 0 16px var(--red);
+      animation: blinkFast 0.45s infinite;
+    }
+
+    .status-led.offline {
+      background: #64748b;
+      box-shadow: none;
+      animation: none;
+    }
+
+    @keyframes pulseLed {
+      0%, 100% { opacity: 1; transform: scale(1); }
+      50% { opacity: 0.55; transform: scale(0.92); }
+    }
+
+    @keyframes blinkFast {
+      0%, 100% { opacity: 1; transform: scale(1.15); }
+      50% { opacity: 0.2; transform: scale(0.85); }
+    }
+
+    .brand-title {
+      font-size: 1.05rem;
+      font-weight: 700;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #f8fafc;
+    }
+
+    .brand-subtitle {
+      font-size: 0.75rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    .connection-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+
+    .conn-pill {
+      font-family: var(--font-mono);
+      font-size: 0.73rem;
+      padding: 5px 10px;
+      border-radius: 6px;
+      background: rgba(15, 23, 42, 0.85);
+      border: 1px solid rgba(148, 163, 184, 0.25);
+      color: #cbd5e1;
+    }
+
+    .conn-pill.online {
+      border-color: rgba(16, 185, 129, 0.5);
+      color: #6ee7b7;
+    }
+
+    .conn-pill.fallback {
+      border-color: rgba(245, 158, 11, 0.5);
+      color: #fcd34d;
+    }
+
+    .endpoint-input {
+      background: rgba(15, 23, 42, 0.9);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: #e2e8f0;
+      font-family: var(--font-mono);
+      font-size: 0.74rem;
+      padding: 5px 10px;
+      border-radius: 6px;
+      width: 210px;
+    }
+
+    /* PAINEL ESQUERDO: AAS METADATA & TELEMETRIA */
+    .left-column {
+      grid-column: 1 / 2;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      overflow-y: auto;
+      max-height: calc(100vh - 150px);
+    }
+
+    /* PAINEL DIREITO: SAÚDE DA MÁQUINA E MODOS DE FALHA */
+    .right-column {
+      grid-column: 3 / 4;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+      overflow-y: auto;
+      max-height: calc(100vh - 150px);
+    }
+
+    .section-title {
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      color: var(--cyan);
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      border-bottom: 1px solid rgba(56, 189, 248, 0.18);
+      padding-bottom: 6px;
+    }
+
+    .aas-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 8px;
+      margin-bottom: 6px;
+    }
+
+    .aas-item {
+      background: rgba(15, 23, 42, 0.65);
+      border: 1px solid rgba(148, 163, 184, 0.14);
+      padding: 8px 10px;
+      border-radius: 6px;
+    }
+
+    .aas-label {
+      font-size: 0.65rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+    }
+
+    .aas-val {
+      font-family: var(--font-mono);
+      font-size: 0.95rem;
+      font-weight: 700;
+      color: #fff;
+      margin-top: 2px;
+    }
+
+    /* SENSORES DINÂMICOS */
+    .metric-card {
+      background: rgba(15, 23, 42, 0.65);
+      border: 1px solid rgba(148, 163, 184, 0.15);
+      border-radius: 8px;
+      padding: 10px 12px;
+      margin-bottom: 9px;
+    }
+
+    .metric-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: baseline;
+      margin-bottom: 6px;
+    }
+
+    .metric-name {
+      font-size: 0.78rem;
+      color: #cbd5e1;
+      font-weight: 500;
+    }
+
+    .metric-value {
+      font-family: var(--font-mono);
+      font-size: 1.08rem;
+      font-weight: 700;
+      color: #f8fafc;
+    }
+
+    .metric-unit {
+      font-size: 0.72rem;
+      color: var(--text-muted);
+      margin-left: 3px;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 6px;
+      background: rgba(30, 41, 59, 0.9);
+      border-radius: 99px;
+      overflow: hidden;
+    }
+
+    .progress-fill {
+      height: 100%;
+      width: 50%;
+      background: linear-gradient(90deg, #0ea5e9, #38bdf8);
+      border-radius: 99px;
+      transition: width 0.3s ease, background 0.3s ease;
+    }
+
+    /* STATUS GERAL DE SAÚDE */
+    .health-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 14px 16px;
+      border-radius: 8px;
+      background: rgba(16, 185, 129, 0.14);
+      border: 1px solid rgba(16, 185, 129, 0.45);
+      margin-bottom: 12px;
+      transition: all 0.25s ease;
+    }
+
+    .health-banner.fault {
+      background: rgba(239, 68, 68, 0.22);
+      border-color: rgba(239, 68, 68, 0.85);
+      animation: bannerFlash 0.9s infinite;
+    }
+
+    @keyframes bannerFlash {
+      0%, 100% { background: rgba(239, 68, 68, 0.26); }
+      50% { background: rgba(239, 68, 68, 0.08); }
+    }
+
+    .health-title {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #cbd5e1;
+    }
+
+    .health-state {
+      font-family: var(--font-mono);
+      font-size: 1.15rem;
+      font-weight: 800;
+      color: #34d399;
+      margin-top: 2px;
+    }
+
+    .health-banner.fault .health-state {
+      color: #fca5a5;
+    }
+
+    .health-banner.offline {
+      background: rgba(51, 65, 85, 0.35);
+      border-color: rgba(148, 163, 184, 0.35);
+    }
+
+    .health-banner.offline .health-state {
+      color: #94a3b8;
+    }
+
+    /* BADGES DE FALHA (TWF, HDF, PWF, OSF, RNF) */
+    .fault-badges-list {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+    }
+
+    .fault-badge {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 9px 12px;
+      border-radius: 7px;
+      background: rgba(15, 23, 42, 0.72);
+      border: 1px solid rgba(148, 163, 184, 0.16);
+      transition: all 0.2s ease;
+    }
+
+    .fault-badge.active {
+      background: rgba(239, 68, 68, 0.22);
+      border-color: #ef4444;
+      box-shadow: 0 0 16px rgba(239, 68, 68, 0.35);
+      transform: translateX(-2px);
+    }
+
+    .fault-badge.active-hdf {
+      background: rgba(249, 115, 22, 0.26);
+      border-color: #f97316;
+      box-shadow: 0 0 18px rgba(249, 115, 22, 0.45);
+    }
+
+    .fault-info {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .fault-code {
+      font-family: var(--font-mono);
+      font-size: 0.84rem;
+      font-weight: 700;
+      color: #f1f5f9;
+    }
+
+    .fault-desc {
+      font-size: 0.68rem;
+      color: var(--text-muted);
+    }
+
+    .fault-pill {
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      font-weight: 700;
+      padding: 4px 9px;
+      border-radius: 99px;
+      background: rgba(16, 185, 129, 0.15);
+      color: #34d399;
+      border: 1px solid rgba(16, 185, 129, 0.35);
+    }
+
+    .fault-badge.active .fault-pill,
+    .fault-badge.active-hdf .fault-pill {
+      background: #ef4444;
+      color: #fff;
+      border-color: #fca5a5;
+    }
+
+    /* BARRA INFERIOR: CONTROLES DE SIMULAÇÃO / TESTE DE FALHAS */
+    .hud-footer {
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 18px;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+
+    .btn-group {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+
+    .hud-btn {
+      background: rgba(30, 41, 59, 0.85);
+      border: 1px solid rgba(56, 189, 248, 0.35);
+      color: #e2e8f0;
+      font-family: var(--font-mono);
+      font-size: 0.72rem;
+      padding: 6px 11px;
+      border-radius: 6px;
+      cursor: pointer;
+      transition: all 0.18s ease;
+    }
+
+    .hud-btn:hover {
+      background: rgba(56, 189, 248, 0.2);
+      border-color: var(--cyan);
+    }
+
+    .hud-btn.active-override {
+      background: rgba(239, 68, 68, 0.3);
+      border-color: #ef4444;
+      color: #fecaca;
+    }
+
+    .footer-hint {
+      font-size: 0.73rem;
+      color: var(--text-muted);
+      font-family: var(--font-mono);
+    }
+
+    @media (max-width: 1100px) {
+      .hud-layer {
+        grid-template-columns: 1fr;
+        overflow-y: auto;
+      }
+      .left-column, .right-column {
+        grid-column: 1 / -1;
+        max-height: none;
+      }
+    }
+  </style>
+
+  <!-- Import Map oficial para Three.js r160 + OrbitControls via CDN -->
+  <script type="importmap">
+    {
+      "imports": {
+        "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+      }
+    }
+  </script>
+</head>
+<body>
+  <!-- CANVAS 3D THREE.JS -->
+  <div id="canvas-container"></div>
+
+  <!-- CAMADA FLUTUANTE HUD -->
+  <div class="hud-layer">
+    <!-- CABEÇALHO -->
+    <header class="hud-panel hud-header" id="header-panel">
+      <div class="brand-block">
+        <div class="status-led" id="global-led"></div>
+        <div>
+          <div class="brand-title">CNC Milling Digital Twin — AI4I 2020</div>
+          <div class="brand-subtitle">AAS ID: urn:ai4i:aas:milling-machine:001 | Submodel: AI4I_OperationalTelemetry</div>
+        </div>
+      </div>
+
+      <div class="connection-bar">
+        <span class="conn-pill" id="basyx-status-pill">CONECTANDO AO BASYX...</span>
+        <span class="conn-pill" id="poll-latency-pill">POLL: 500ms</span>
+        <input
+          type="text"
+          id="basyx-endpoint-input"
+          class="endpoint-input"
+          value="http://localhost:8081"
+          title="URL do Servidor Eclipse BaSyx AAS Environment"
+        />
+      </div>
+    </header>
+
+    <!-- COLUNA ESQUERDA: PROPRIEDADES ESTÁTICAS E SENSORES DINÂMICOS -->
+    <aside class="left-column">
+      <div class="hud-panel">
+        <div class="section-title">
+          <span>Identificação do Ativo (AAS)</span>
+          <span id="last-update-time">--:--:--</span>
+        </div>
+        <div class="aas-grid">
+          <div class="aas-item">
+            <div class="aas-label">UID (Ciclo)</div>
+            <div class="aas-val" id="val-uid">#1</div>
+          </div>
+          <div class="aas-item">
+            <div class="aas-label">Product ID</div>
+            <div class="aas-val" id="val-product-id">M14860</div>
+          </div>
+          <div class="aas-item">
+            <div class="aas-label">Quality Type</div>
+            <div class="aas-val" id="val-type">M</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="hud-panel">
+        <div class="section-title">
+          <span>Sensores em Tempo Real (AI4I 2020)</span>
+          <span>1 Hz / 500ms Poll</span>
+        </div>
+
+        <!-- Air Temperature -->
+        <div class="metric-card">
+          <div class="metric-header">
+            <span class="metric-name">Temperatura Ambiente (Air)</span>
+            <div>
+              <span class="metric-value" id="val-air-temp">298.1</span>
+              <span class="metric-unit">K (<span id="val-air-celsius">25.0</span> °C)</span>
+            </div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="bar-air-temp" style="width: 35%;"></div>
+          </div>
+        </div>
+
+        <!-- Process Temperature -->
+        <div class="metric-card">
+          <div class="metric-header">
+            <span class="metric-name">Temperatura de Processo</span>
+            <div>
+              <span class="metric-value" id="val-proc-temp">308.6</span>
+              <span class="metric-unit">K (<span id="val-proc-celsius">35.5</span> °C)</span>
+            </div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="bar-proc-temp" style="width: 55%;"></div>
+          </div>
+        </div>
+
+        <!-- Rotational Speed (RPM) -->
+        <div class="metric-card">
+          <div class="metric-header">
+            <span class="metric-name">Velocidade do Spindle (Eixo Z)</span>
+            <div>
+              <span class="metric-value" id="val-rpm">1551</span>
+              <span class="metric-unit">rpm</span>
+            </div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="bar-rpm" style="width: 48%;"></div>
+          </div>
+        </div>
+
+        <!-- Torque -->
+        <div class="metric-card">
+          <div class="metric-header">
+            <span class="metric-name">Torque de Usinagem</span>
+            <div>
+              <span class="metric-value" id="val-torque">42.8</span>
+              <span class="metric-unit">Nm</span>
+            </div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="bar-torque" style="width: 54%;"></div>
+          </div>
+        </div>
+
+        <!-- Tool Wear -->
+        <div class="metric-card" style="margin-bottom: 0;">
+          <div class="metric-header">
+            <span class="metric-name">Desgaste da Ferramenta (Tool Wear)</span>
+            <div>
+              <span class="metric-value" id="val-wear">0</span>
+              <span class="metric-unit">min / 240 min</span>
+            </div>
+          </div>
+          <div class="progress-track">
+            <div class="progress-fill" id="bar-wear" style="width: 2%;"></div>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- COLUNA DIREITA: DIAGNÓSTICO E MODOS DE FALHA -->
+    <aside class="right-column">
+      <div class="hud-panel" id="diagnostics-panel">
+        <div class="section-title">
+          <span>Diagnóstico Preditivo & Saúde</span>
+          <span id="val-power">6951 W</span>
+        </div>
+
+        <div class="health-banner" id="health-banner">
+          <div>
+            <div class="health-title">Machine Status (MachineFailure)</div>
+            <div class="health-state" id="health-state-text">OPERAÇÃO NOMINAL (0)</div>
+          </div>
+          <div style="font-family: var(--font-mono); font-size: 0.78rem; text-align: right;">
+            <div>&Delta;T: <strong id="val-delta-t">10.5 K</strong></div>
+            <div>Strain: <strong id="val-strain">0 minNm</strong></div>
+          </div>
+        </div>
+
+        <div class="section-title" style="margin-top: 8px;">
+          <span>Modos de Falha AI4I (Flags Binários)</span>
+        </div>
+
+        <div class="fault-badges-list">
+          <div class="fault-badge" id="badge-twf">
+            <div class="fault-info">
+              <span class="fault-code">TWF — Tool Wear Failure</span>
+              <span class="fault-desc">Desgaste crítico da fresa (200–240 min)</span>
+            </div>
+            <span class="fault-pill" id="pill-twf">0 (OK)</span>
+          </div>
+
+          <div class="fault-badge" id="badge-hdf">
+            <div class="fault-info">
+              <span class="fault-code">HDF — Heat Dissipation Failure</span>
+              <span class="fault-desc">&Delta;T &lt; 8.6 K &amp; Rotação &lt; 1380 rpm (Peça Incandescente)</span>
+            </div>
+            <span class="fault-pill" id="pill-hdf">0 (OK)</span>
+          </div>
+
+          <div class="fault-badge" id="badge-pwf">
+            <div class="fault-info">
+              <span class="fault-code">PWF — Power Failure</span>
+              <span class="fault-desc">Potência fora da faixa (3500 W – 9000 W)</span>
+            </div>
+            <span class="fault-pill" id="pill-pwf">0 (OK)</span>
+          </div>
+
+          <div class="fault-badge" id="badge-osf">
+            <div class="fault-info">
+              <span class="fault-code">OSF — Overstrain Failure</span>
+              <span class="fault-desc">Sobrecarga Torque &times; Tool Wear (&gt;11k–13k minNm)</span>
+            </div>
+            <span class="fault-pill" id="pill-osf">0 (OK)</span>
+          </div>
+
+          <div class="fault-badge" id="badge-rnf">
+            <div class="fault-info">
+              <span class="fault-code">RNF — Random Failure</span>
+              <span class="fault-desc">Falha estocástica do processo (0.1%)</span>
+            </div>
+            <span class="fault-pill" id="pill-rnf">0 (OK)</span>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- RODAPÉ: CONTROLES DE CÂMERA E STATUS DO POLLING -->
+    <footer class="hud-panel hud-footer">
+      <div class="footer-hint">
+        Mouse Esquerdo: Orbitar 3D | Scroll: Zoom | Botão Direito: Pan |
+        <strong>Modo de Operação:</strong>
+      </div>
+      <div class="btn-group">
+        <button class="hud-btn active-override" id="btn-mode-auto">SINCRONIZADO COM BASYX AAS (TEMPO REAL)</button>
+        <button class="hud-btn" id="btn-mode-hdf" title="Apenas para teste manual de shader caso desejado">Testar Alerta HDF</button>
+        <button class="hud-btn" id="btn-mode-twf" title="Apenas para teste manual de shader caso desejado">Testar Alerta TWF</button>
+        <button class="hud-btn" id="btn-mode-osf" title="Apenas para teste manual de shader caso desejado">Testar Alerta OSF</button>
+      </div>
+    </footer>
+  </div>
+
+  <!-- SCRIPT PRINCIPAL: CLIENTE BASYX + CENA 3D THREE.JS -->
+  <script type="module">
+    import * as THREE from 'three';
+    import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+
+    // =========================================================================
+    // 1. CONFIGURAÇÃO E CODIFICAÇÃO DO SUBMODELO BASYX (API v3.0)
+    // =========================================================================
+    const SUBMODEL_ID = 'urn:ai4i:submodel:operational-telemetry:001';
+    // Base64URL sem padding '=' para o Submodel ID
+    const SUBMODEL_ID_B64 = btoa(SUBMODEL_ID).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+
+    const PROPERTY_NAMES = [
+      'UID', 'ProductID', 'Type',
+      'AirTemperature', 'ProcessTemperature',
+      'RotationalSpeed', 'Torque', 'ToolWear',
+      'MachineFailure', 'TWF', 'HDF', 'PWF', 'OSF', 'RNF'
+    ];
+
+    // Estado reativo da máquina consumido pela animação 3D e pelo HUD
+    // Inicia desconectado (basyxConnected = false) e com máquina parada (RPM = 0)
+    // até que o servidor BaSyx responda com os dados reais do Submodelo!
+    const machineState = {
+      UID: 0,
+      ProductID: '---',
+      Type: '-',
+      AirTemperature: 0.0,
+      ProcessTemperature: 0.0,
+      RotationalSpeed: 0,
+      Torque: 0.0,
+      ToolWear: 0,
+      MachineFailure: 0,
+      TWF: 0,
+      HDF: 0,
+      PWF: 0,
+      OSF: 0,
+      RNF: 0,
+      overrideMode: 'AUTO', // 'AUTO' | 'HDF' | 'TWF' | 'OSF'
+      basyxConnected: false
+    };
+
+    // =========================================================================
+    // 2. CONSTRUÇÃO PROCEDURAL DA FRESADORA CNC EM THREE.JS
+    // =========================================================================
+    const container = document.getElementById('canvas-container');
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x070b12);
+    scene.fog = new THREE.FogExp2(0x070b12, 0.028);
+
+    const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 150);
+    camera.position.set(8.5, 6.8, 9.5);
+
+    const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: 'high-performance' });
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+    renderer.shadowMap.enabled = true;
+    renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+    renderer.toneMapping = THREE.ACESFilmicToneMapping;
+    renderer.toneMappingExposure = 1.15;
+    container.appendChild(renderer.domElement);
+
+    const controls = new OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.06;
+    controls.target.set(0, 2.2, 0);
+    controls.maxPolarAngle = Math.PI / 2 - 0.02;
+    controls.minDistance = 4;
+    controls.maxDistance = 24;
+
+    // --- Iluminação Industrial ---
+    const ambientLight = new THREE.AmbientLight(0x94a3b8, 0.65);
+    scene.add(ambientLight);
+
+    const mainSpot = new THREE.DirectionalLight(0xf8fafc, 2.2);
+    mainSpot.position.set(10, 16, 12);
+    mainSpot.castShadow = true;
+    mainSpot.shadow.mapSize.width = 2048;
+    mainSpot.shadow.mapSize.height = 2048;
+    scene.add(mainSpot);
+
+    const rimLight = new THREE.DirectionalLight(0x38bdf8, 0.9);
+    rimLight.position.set(-10, 8, -8);
+    scene.add(rimLight);
+
+    // Piso com grade técnica
+    const gridHelper = new THREE.GridHelper(30, 30, 0x1e293b, 0x0f172a);
+    scene.add(gridHelper);
+
+    const floorGeo = new THREE.PlaneGeometry(60, 60);
+    const floorMat = new THREE.MeshStandardMaterial({ color: 0x05080f, roughness: 0.85, metalness: 0.2 });
+    const floorMesh = new THREE.Mesh(floorGeo, floorMat);
+    floorMesh.rotation.x = -Math.PI / 2;
+    floorMesh.position.y = -0.01;
+    floorMesh.receiveShadow = true;
+    scene.add(floorMesh);
+
+    // --- Materiais Metálicos da Fresadora CNC ---
+    const castIronMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, roughness: 0.6, metalness: 0.75 });
+    const brushedSteelMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.25, metalness: 0.92 });
+    const darkSteelMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.4, metalness: 0.85 });
+    const accentCyanMat = new THREE.MeshStandardMaterial({
+      color: 0x0284c7,
+      emissive: 0x0369a1,
+      emissiveIntensity: 0.35,
+      roughness: 0.3,
+      metalness: 0.6
+    });
+
+    // Material dinâmico da Ferramenta de Corte (muda de cor em falha / TWF / MachineFailure)
+    const toolMaterial = new THREE.MeshStandardMaterial({
+      color: 0xe2e8f0,
+      emissive: 0x000000,
+      emissiveIntensity: 0.0,
+      roughness: 0.18,
+      metalness: 0.95
+    });
+
+    // Material dinâmico da Peça Usinada (muda para vermelho incandescente/brasa em falha HDF!)
+    const workpieceMaterial = new THREE.MeshStandardMaterial({
+      color: 0x64748b,
+      emissive: 0x000000,
+      emissiveIntensity: 0.0,
+      roughness: 0.35,
+      metalness: 0.85
+    });
+
+    // --- Grupo Raiz da Fresadora CNC ---
+    const cncMachine = new THREE.Group();
+    scene.add(cncMachine);
+
+    // 1. Base Pesada da Máquina
+    const baseMesh = new THREE.Mesh(new THREE.BoxGeometry(6.4, 0.9, 5.2), castIronMat);
+    baseMesh.position.y = 0.45;
+    baseMesh.castShadow = true;
+    baseMesh.receiveShadow = true;
+    cncMachine.add(baseMesh);
+
+    // Trilhos Lineares do Eixo Y (sobre a base)
+    for (const xOffset of [-1.6, 1.6]) {
+      const railY = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.14, 4.4), brushedSteelMat);
+      railY.position.set(xOffset, 0.97, 0);
+      cncMachine.add(railY);
+    }
+
+    // 2. Mesa de Corte Móvel (Eixos X / Y) + Peça Usinada (Workpiece)
+    const tableGroup = new THREE.Group();
+    tableGroup.position.set(0, 1.15, 0);
+    cncMachine.add(tableGroup);
+
+    const tablePlate = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.28, 2.8), brushedSteelMat);
+    tablePlate.castShadow = true;
+    tablePlate.receiveShadow = true;
+    tableGroup.add(tablePlate);
+
+    // Ranhuras T-Slot na mesa de corte
+    for (let zSlot = -1.0; zSlot <= 1.0; zSlot += 0.5) {
+      const slot = new THREE.Mesh(new THREE.BoxGeometry(4.05, 0.05, 0.08), darkSteelMat);
+      slot.position.set(0, 0.14, zSlot);
+      tableGroup.add(slot);
+    }
+
+    // Morsa / Fixador Industrial + Peça Metálica sendo usinada
+    const viseBase = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.2, 1.5), darkSteelMat);
+    viseBase.position.set(0, 0.24, 0);
+    tableGroup.add(viseBase);
+
+    const workpieceMesh = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.55, 1.15), workpieceMaterial);
+    workpieceMesh.position.set(0, 0.60, 0);
+    workpieceMesh.castShadow = true;
+    workpieceMesh.receiveShadow = true;
+    tableGroup.add(workpieceMesh);
+
+    // Luz pontual de incandescência térmica sobre a peça (ativa durante falha HDF)
+    const heatGlowLight = new THREE.PointLight(0xff3b00, 0.0, 5.5);
+    heatGlowLight.position.set(0, 1.1, 0);
+    tableGroup.add(heatGlowLight);
+
+    // 3. Pórtico Móvel (Gantry)
+    const gantryGroup = new THREE.Group();
+    gantryGroup.position.set(0, 0, -0.35);
+    cncMachine.add(gantryGroup);
+
+    // Colunas Esquerda e Direita do Pórtico
+    for (const xCol of [-2.6, 2.6]) {
+      const col = new THREE.Mesh(new THREE.BoxGeometry(0.75, 4.6, 0.95), castIronMat);
+      col.position.set(xCol, 3.2, 0);
+      col.castShadow = true;
+      col.receiveShadow = true;
+      gantryGroup.add(col);
+
+      // Faixa estética industrial azul ciano
+      const stripe = new THREE.Mesh(new THREE.BoxGeometry(0.78, 3.8, 0.12), accentCyanMat);
+      stripe.position.set(xCol, 3.2, 0.45);
+      gantryGroup.add(stripe);
+    }
+
+    // Travessa Superior do Pórtico (Crossbeam)
+    const crossBeam = new THREE.Mesh(new THREE.BoxGeometry(6.2, 0.95, 1.15), castIronMat);
+    crossBeam.position.set(0, 5.15, 0.1);
+    crossBeam.castShadow = true;
+    gantryGroup.add(crossBeam);
+
+    // Guias Lineares Horizontais do Eixo X no Pórtico
+    for (const yRail of [4.88, 5.42]) {
+      const xRail = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.1, 0.12), brushedSteelMat);
+      xRail.position.set(0, yRail, 0.7);
+      gantryGroup.add(xRail);
+    }
+
+    // Torre Luminosa de Alarme (Stack Light / Beacon) no topo do Pórtico
+    const beaconStalk = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.45, 16), darkSteelMat);
+    beaconStalk.position.set(2.4, 5.85, 0.1);
+    gantryGroup.add(beaconStalk);
+
+    const beaconBulbMat = new THREE.MeshStandardMaterial({
+      color: 0x10b981,
+      emissive: 0x10b981,
+      emissiveIntensity: 0.9,
+      roughness: 0.2,
+      transparent: true,
+      opacity: 0.92
+    });
+    const beaconBulb = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.18, 0.42, 24), beaconBulbMat);
+    beaconBulb.position.set(2.4, 6.25, 0.1);
+    gantryGroup.add(beaconBulb);
+
+    // Luz de aviso vermelha piscante na cena 3D (acionada em MachineFailure == 1)
+    const alarmPointLight = new THREE.PointLight(0xff1e1e, 0.0, 18);
+    alarmPointLight.position.set(2.4, 6.5, 0.3);
+    gantryGroup.add(alarmPointLight);
+
+    // 4. Cabeçote do Spindle (Eixo Z) e Ferramenta Rotativa
+    const spindleCarriage = new THREE.Group();
+    spindleCarriage.position.set(0, 4.1, 0.85);
+    gantryGroup.add(spindleCarriage);
+
+    // Bloco do Motor Spindle
+    const spindleHousing = new THREE.Mesh(new THREE.BoxGeometry(1.15, 1.85, 0.95), darkSteelMat);
+    spindleHousing.castShadow = true;
+    spindleCarriage.add(spindleHousing);
+
+    const motorCoolingFins = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.42, 0.7, 24), castIronMat);
+    motorCoolingFins.position.set(0, 1.25, 0);
+    spindleCarriage.add(motorCoolingFins);
+
+    // Grupo Rotativo (Mandril + Fresa de Topo Helicoidal)
+    const rotatingToolGroup = new THREE.Group();
+    rotatingToolGroup.position.set(0, -0.95, 0);
+    spindleCarriage.add(rotatingToolGroup);
+
+    // Cone ISO / Mandril (Collet Chuck)
+    const chuckCone = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.18, 0.42, 24), brushedSteelMat);
+    chuckCone.position.y = -0.21;
+    rotatingToolGroup.add(chuckCone);
+
+    // Corpo da Fresa (End Mill) com arestas visíveis para evidenciar a rotação em RPM
+    const endMillShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.95, 6), toolMaterial);
+    endMillShaft.position.y = -0.85;
+    endMillShaft.castShadow = true;
+    rotatingToolGroup.add(endMillShaft);
+
+    // Arestas de corte helicoidais simuladas (anéis sextavados rotacionados)
+    for (let i = 0; i < 4; i++) {
+      const fluteRing = new THREE.Mesh(new THREE.BoxGeometry(0.30, 0.12, 0.07), toolMaterial);
+      fluteRing.position.y = -0.55 - i * 0.18;
+      fluteRing.rotation.y = (i * Math.PI) / 4;
+      rotatingToolGroup.add(fluteRing);
+    }
+
+    // Sistema de Partículas Leves (Fagulhas de Usinagem)
+    const sparkCount = 45;
+    const sparkGeo = new THREE.BufferGeometry();
+    const sparkPositions = new Float32Array(sparkCount * 3);
+    for (let i = 0; i < sparkCount * 3; i++) sparkPositions[i] = 0;
+    sparkGeo.setAttribute('position', new THREE.BufferAttribute(sparkPositions, 3));
+    const sparkMat = new THREE.PointsMaterial({ color: 0xfbbf24, size: 0.08, transparent: true, opacity: 0.85 });
+    const sparkParticles = new THREE.Points(sparkGeo, sparkMat);
+    scene.add(sparkParticles);
+
+    // =========================================================================
+    // 3. INTEGRAÇÃO HTTP FETCH (POLLING A CADA 500ms) COM O SERVIDOR BASYX
+    // =========================================================================
+    const basyxInput = document.getElementById('basyx-endpoint-input');
+    const statusPill = document.getElementById('basyx-status-pill');
+    const latencyPill = document.getElementById('poll-latency-pill');
+
+    /**
+     * Faz uma requisição HTTP Fetch para recuperar os elementos do Submodelo no BaSyx.
+     * Suporta tanto a leitura em lote (/submodel-elements) quanto URLs individuais
+     * de propriedades (/submodel-elements/{idShort}/$value).
+     */
+    async function pollBaSyxTelemetry() {
+      if (machineState.overrideMode !== 'AUTO') {
+        return; // Operador forçou um estado de teste manual na barra inferior
+      }
+
+      const baseUrl = basyxInput.value.trim().replace(/\/+$/, '');
+      const submodelElementsUrl = `${baseUrl}/submodels/${SUBMODEL_ID_B64}/submodel-elements`;
+      const t0 = performance.now();
+
+      try {
+        // 1. Tenta buscar todos os submodel-elements ou valores individuais do servidor AAS
+        const response = await fetch(submodelElementsUrl, {
+          method: 'GET',
+          headers: { 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(450)
+        });
+
+        if (!response.ok) {
+          throw new Error(`HTTP ${response.status}`);
+        }
+
+        const payload = await response.json();
+        const elements = Array.isArray(payload.result) ? payload.result : (Array.isArray(payload) ? payload : []);
+
+        const parsed = {};
+        for (const el of elements) {
+          if (el && el.idShort && el.value !== undefined) {
+            parsed[el.idShort] = el.value;
+          }
+        }
+
+        // Caso o endpoint retorne vazio, faz fallback consultando as propriedades /$value diretamente
+        if (Object.keys(parsed).length === 0) {
+          await Promise.all(
+            PROPERTY_NAMES.map(async (prop) => {
+              const propUrl = `${submodelElementsUrl}/${prop}/$value`;
+              const r = await fetch(propUrl, { signal: AbortSignal.timeout(400) });
+              if (r.ok) {
+                parsed[prop] = await r.json();
+              }
+            })
+          );
+        }
+
+        applyTelemetryToState(parsed);
+        machineState.basyxConnected = true;
+
+        const dt = Math.round(performance.now() - t0);
+        statusPill.textContent = 'BASYX AAS: ONLINE';
+        statusPill.className = 'conn-pill online';
+        latencyPill.textContent = `HTTP POLL: ${dt}ms`;
+      } catch (err) {
+        // Sem simulação falsa local: mantém a máquina parada aguardando dados reais do BaSyx!
+        machineState.basyxConnected = false;
+        machineState.RotationalSpeed = 0;
+        machineState.Torque = 0;
+        machineState.MachineFailure = 0;
+        machineState.TWF = 0;
+        machineState.HDF = 0;
+        machineState.PWF = 0;
+        machineState.OSF = 0;
+        machineState.RNF = 0;
+
+        statusPill.textContent = 'AGUARDANDO BASYX (OFFLINE)';
+        statusPill.className = 'conn-pill fallback';
+        latencyPill.textContent = 'POLL: 500ms (Sem Conexão)';
+      }
+
+      updateHUD();
+    }
+
+    function applyTelemetryToState(raw) {
+      if (raw.UID !== undefined) machineState.UID = parseInt(raw.UID, 10) || 1;
+      if (raw.ProductID !== undefined) machineState.ProductID = String(raw.ProductID);
+      if (raw.Type !== undefined) machineState.Type = String(raw.Type);
+      if (raw.AirTemperature !== undefined) machineState.AirTemperature = parseFloat(raw.AirTemperature);
+      if (raw.ProcessTemperature !== undefined) machineState.ProcessTemperature = parseFloat(raw.ProcessTemperature);
+      if (raw.RotationalSpeed !== undefined) machineState.RotationalSpeed = parseInt(raw.RotationalSpeed, 10);
+      if (raw.Torque !== undefined) machineState.Torque = parseFloat(raw.Torque);
+      if (raw.ToolWear !== undefined) machineState.ToolWear = parseInt(raw.ToolWear, 10);
+      if (raw.MachineFailure !== undefined) machineState.MachineFailure = parseInt(raw.MachineFailure, 10);
+      if (raw.TWF !== undefined) machineState.TWF = parseInt(raw.TWF, 10);
+      if (raw.HDF !== undefined) machineState.HDF = parseInt(raw.HDF, 10);
+      if (raw.PWF !== undefined) machineState.PWF = parseInt(raw.PWF, 10);
+      if (raw.OSF !== undefined) machineState.OSF = parseInt(raw.OSF, 10);
+      if (raw.RNF !== undefined) machineState.RNF = parseInt(raw.RNF, 10);
+    }
+
+    // Dispara o polling HTTP a cada 500ms conforme especificação
+    setInterval(pollBaSyxTelemetry, 500);
+    pollBaSyxTelemetry();
+
+    // =========================================================================
+    // 4. ATUALIZAÇÃO DO HUD HTML EM TEMPO REAL
+    // =========================================================================
+    function updateHUD() {
+      const isOnline = machineState.basyxConnected || machineState.overrideMode !== 'AUTO';
+      const headerPanel = document.getElementById('header-panel');
+      const diagPanel = document.getElementById('diagnostics-panel');
+      const healthBanner = document.getElementById('health-banner');
+      const healthText = document.getElementById('health-state-text');
+      const globalLed = document.getElementById('global-led');
+
+      if (!isOnline) {
+        document.getElementById('last-update-time').textContent = 'AGUARDANDO DADOS';
+        document.getElementById('val-uid').textContent = '---';
+        document.getElementById('val-product-id').textContent = '---';
+        document.getElementById('val-type').textContent = '-';
+
+        document.getElementById('val-air-temp').textContent = '---';
+        document.getElementById('val-air-celsius').textContent = '--';
+        document.getElementById('val-proc-temp').textContent = '---';
+        document.getElementById('val-proc-celsius').textContent = '--';
+        document.getElementById('val-rpm').textContent = '0';
+        document.getElementById('val-torque').textContent = '0.0';
+        document.getElementById('val-wear').textContent = '0';
+
+        document.getElementById('bar-air-temp').style.width = '0%';
+        document.getElementById('bar-proc-temp').style.width = '0%';
+        document.getElementById('bar-rpm').style.width = '0%';
+        document.getElementById('bar-torque').style.width = '0%';
+        document.getElementById('bar-wear').style.width = '0%';
+
+        document.getElementById('val-power').textContent = '0 W';
+        document.getElementById('val-delta-t').textContent = '-- K';
+        document.getElementById('val-strain').textContent = '0 minNm';
+
+        headerPanel.classList.remove('critical-alert');
+        diagPanel.classList.remove('critical-alert');
+        healthBanner.classList.remove('fault');
+        healthBanner.classList.add('offline');
+        globalLed.classList.remove('fault');
+        globalLed.classList.add('offline');
+        healthText.textContent = 'AGUARDANDO TELEMETRIA DO BASYX...';
+
+        ['twf', 'hdf', 'pwf', 'osf', 'rnf'].forEach((c) => updateFaultBadge(c, 0, false));
+        return;
+      }
+
+      healthBanner.classList.remove('offline');
+      globalLed.classList.remove('offline');
+
+      document.getElementById('last-update-time').textContent = new Date().toLocaleTimeString('pt-BR');
+      document.getElementById('val-uid').textContent = `#${machineState.UID}`;
+      document.getElementById('val-product-id').textContent = machineState.ProductID;
+      document.getElementById('val-type').textContent = machineState.Type;
+
+      // Temperaturas
+      const airK = machineState.AirTemperature;
+      const procK = machineState.ProcessTemperature;
+      document.getElementById('val-air-temp').textContent = airK.toFixed(1);
+      document.getElementById('val-air-celsius').textContent = (airK - 273.15).toFixed(1);
+      document.getElementById('val-proc-temp').textContent = procK.toFixed(1);
+      document.getElementById('val-proc-celsius').textContent = (procK - 273.15).toFixed(1);
+
+      const airPct = Math.min(100, Math.max(5, ((airK - 295) / 10) * 100));
+      const procPct = Math.min(100, Math.max(5, ((procK - 305) / 10) * 100));
+      document.getElementById('bar-air-temp').style.width = `${airPct}%`;
+      const barProc = document.getElementById('bar-proc-temp');
+      barProc.style.width = `${procPct}%`;
+      barProc.style.background = machineState.HDF
+        ? 'linear-gradient(90deg, #f97316, #ef4444)'
+        : 'linear-gradient(90deg, #0ea5e9, #38bdf8)';
+
+      // RPM, Torque e Tool Wear
+      document.getElementById('val-rpm').textContent = machineState.RotationalSpeed;
+      const rpmPct = Math.min(100, Math.max(5, ((machineState.RotationalSpeed - 1100) / 1800) * 100));
+      document.getElementById('bar-rpm').style.width = `${rpmPct}%`;
+
+      document.getElementById('val-torque').textContent = machineState.Torque.toFixed(1);
+      const torquePct = Math.min(100, Math.max(5, (machineState.Torque / 80) * 100));
+      const barTorque = document.getElementById('bar-torque');
+      barTorque.style.width = `${torquePct}%`;
+      barTorque.style.background = machineState.Torque > 55
+        ? 'linear-gradient(90deg, #f59e0b, #ef4444)'
+        : 'linear-gradient(90deg, #0ea5e9, #38bdf8)';
+
+      document.getElementById('val-wear').textContent = machineState.ToolWear;
+      const wearPct = Math.min(100, Math.max(2, (machineState.ToolWear / 240) * 100));
+      const barWear = document.getElementById('bar-wear');
+      barWear.style.width = `${wearPct}%`;
+      barWear.style.background = machineState.ToolWear >= 190
+        ? 'linear-gradient(90deg, #f59e0b, #ef4444)'
+        : 'linear-gradient(90deg, #10b981, #38bdf8)';
+
+      // Métricas derivadas (Potência, Delta T, Strain)
+      const powerW = Math.round(machineState.Torque * (machineState.RotationalSpeed * 2 * Math.PI / 60));
+      const deltaT = (procK - airK).toFixed(1);
+      const strain = Math.round(machineState.ToolWear * machineState.Torque);
+
+      document.getElementById('val-power').textContent = `${powerW} W`;
+      document.getElementById('val-delta-t').textContent = `${deltaT} K`;
+      document.getElementById('val-strain').textContent = `${strain} minNm`;
+
+      // Status Geral e Badges de Falha
+      const isFault = machineState.MachineFailure === 1;
+
+      headerPanel.classList.toggle('critical-alert', isFault);
+      diagPanel.classList.toggle('critical-alert', isFault);
+      healthBanner.classList.toggle('fault', isFault);
+      globalLed.classList.toggle('fault', isFault);
+
+      healthText.textContent = isFault ? 'FALHA CRÍTICA DETECTADA (1)' : 'OPERAÇÃO NOMINAL (0)';
+
+      updateFaultBadge('twf', machineState.TWF, false);
+      updateFaultBadge('hdf', machineState.HDF, true);
+      updateFaultBadge('pwf', machineState.PWF, false);
+      updateFaultBadge('osf', machineState.OSF, false);
+      updateFaultBadge('rnf', machineState.RNF, false);
+    }
+
+    function updateFaultBadge(code, flagValue, isHdf) {
+      const badge = document.getElementById(`badge-${code}`);
+      const pill = document.getElementById(`pill-${code}`);
+      const active = flagValue === 1;
+
+      badge.classList.toggle('active', active && !isHdf);
+      badge.classList.toggle('active-hdf', active && isHdf);
+      pill.textContent = active ? '1 (ATIVO)' : '0 (OK)';
+    }
+
+    // =========================================================================
+    // 5. BOTÕES DE MODO DE OPERAÇÃO / TESTE VISUAL
+    // =========================================================================
+    const modeButtons = {
+      AUTO: document.getElementById('btn-mode-auto'),
+      HDF: document.getElementById('btn-mode-hdf'),
+      TWF: document.getElementById('btn-mode-twf'),
+      OSF: document.getElementById('btn-mode-osf')
+    };
+
+    function setOverrideMode(mode) {
+      machineState.overrideMode = mode;
+      Object.entries(modeButtons).forEach(([k, btn]) => {
+        if (btn) btn.classList.toggle('active-override', k === mode);
+      });
+
+      if (mode === 'AUTO') {
+        pollBaSyxTelemetry();
+        return;
+      } else if (mode === 'HDF') {
+        Object.assign(machineState, {
+          UID: 4222, ProductID: 'L51401', Type: 'L',
+          AirTemperature: 303.4, ProcessTemperature: 310.9, // DeltaT = 7.5K < 8.6K
+          RotationalSpeed: 1280, Torque: 52.0, ToolWear: 110,
+          MachineFailure: 1, TWF: 0, HDF: 1, PWF: 0, OSF: 0, RNF: 0
+        });
+      } else if (mode === 'TWF') {
+        Object.assign(machineState, {
+          UID: 1088, ProductID: 'H30511', Type: 'H',
+          AirTemperature: 299.1, ProcessTemperature: 309.5,
+          RotationalSpeed: 1580, Torque: 44.0, ToolWear: 228,
+          MachineFailure: 1, TWF: 1, HDF: 0, PWF: 0, OSF: 0, RNF: 0
+        });
+      } else if (mode === 'OSF') {
+        Object.assign(machineState, {
+          UID: 2510, ProductID: 'M17369', Type: 'M',
+          AirTemperature: 300.2, ProcessTemperature: 310.6,
+          RotationalSpeed: 1390, Torque: 68.5, ToolWear: 205,
+          MachineFailure: 1, TWF: 0, HDF: 0, PWF: 0, OSF: 1, RNF: 0
+        });
+      }
+      updateHUD();
+    }
+
+    modeButtons.AUTO.addEventListener('click', () => setOverrideMode('AUTO'));
+    modeButtons.HDF.addEventListener('click', () => setOverrideMode('HDF'));
+    modeButtons.TWF.addEventListener('click', () => setOverrideMode('TWF'));
+    modeButtons.OSF.addEventListener('click', () => setOverrideMode('OSF'));
+
+    // =========================================================================
+    // 6. LOOP DE ANIMAÇÃO 3D INDUSTRIAL (SINCRONIZADO COM TELEMETRIA BASYX)
+    // =========================================================================
+    const clock = new THREE.Clock();
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      const delta = clock.getDelta();
+      const elapsed = clock.getElapsedTime();
+      const isMachineActive = machineState.basyxConnected || machineState.overrideMode !== 'AUTO';
+
+      if (!isMachineActive) {
+        // Máquina em repouso absoluto (Standby) enquanto aguarda conexão com o BaSyx
+        spindleCarriage.position.set(0, 4.1, 0.85);
+        tableGroup.position.set(0, 1.15, 0);
+        gantryGroup.position.set(0, 0, -0.35);
+        alarmPointLight.intensity = 0.0;
+        heatGlowLight.intensity = 0.0;
+        beaconBulbMat.color.setHex(0x64748b);
+        beaconBulbMat.emissive.setHex(0x000000);
+        beaconBulbMat.emissiveIntensity = 0.0;
+        sparkParticles.visible = false;
+
+        controls.update();
+        renderer.render(scene, camera);
+        return;
+      }
+
+      sparkParticles.visible = true;
+
+      // 1. Velocidade de rotação visual da ferramenta proporcional ao 'RotationalSpeed [rpm]'
+      const rpm = machineState.RotationalSpeed || 0;
+      const angularVelocityVisual = (rpm / 60) * 0.85;
+      rotatingToolGroup.rotation.y -= angularVelocityVisual * delta * Math.PI * 2;
+
+      // 2. Movimento da Mesa de Corte (Eixos X / Y) e Pórtico durante usinagem
+      const feedSpeed = Math.max(0.4, rpm / 1400);
+      tableGroup.position.x = Math.sin(elapsed * feedSpeed * 0.9) * 0.55;
+      tableGroup.position.z = Math.cos(elapsed * feedSpeed * 0.6) * 0.32;
+      gantryGroup.position.z = -0.35 + Math.sin(elapsed * 0.45) * 0.18;
+
+      // 3. Movimento do Cabeçote do Spindle (Eixo Z) e micro-vibração baseada em Torque + ToolWear
+      const torqueFactor = (machineState.Torque || 40) / 50.0;
+      const wearFactor = (machineState.ToolWear || 0) / 200.0;
+      const vibrationAmplitude = 0.008 * torqueFactor + 0.022 * wearFactor;
+
+      // Oscilação vertical de usinagem no eixo Z + chatter proporcional ao desgaste/torque
+      const zCutDepth = 3.68 + Math.sin(elapsed * 2.2) * 0.09;
+      const zChatter = Math.sin(elapsed * 48.0) * vibrationAmplitude;
+      const xChatter = Math.cos(elapsed * 55.0) * (vibrationAmplitude * 0.75);
+
+      spindleCarriage.position.y = zCutDepth + zChatter;
+      spindleCarriage.position.x = Math.cos(elapsed * feedSpeed * 0.9) * 0.35 + xChatter;
+
+      // 4. Alertas Visuais 3D:
+      // 4a. MachineFailure == 1 -> Luz de aviso vermelha piscante + ferramenta em alerta vermelho/laranja
+      if (machineState.MachineFailure === 1) {
+        const blink = (Math.sin(elapsed * 14.0) + 1.0) * 0.5; // Pisca rápido
+        alarmPointLight.intensity = 1.5 + blink * 5.5;
+        beaconBulbMat.color.setHex(0xef4444);
+        beaconBulbMat.emissive.setHex(0xff0000);
+        beaconBulbMat.emissiveIntensity = 0.6 + blink * 2.0;
+
+        // Altera cor da ferramenta de corte para alerta crítico
+        toolMaterial.color.setHex(0xfca5a5);
+        toolMaterial.emissive.setHex(0xdc2626);
+        toolMaterial.emissiveIntensity = 0.45 + blink * 0.65;
+      } else {
+        alarmPointLight.intensity = 0.0;
+        beaconBulbMat.color.setHex(0x10b981);
+        beaconBulbMat.emissive.setHex(0x10b981);
+        beaconBulbMat.emissiveIntensity = 0.8;
+
+        toolMaterial.color.setHex(0xe2e8f0);
+        toolMaterial.emissive.setHex(0x000000);
+        toolMaterial.emissiveIntensity = 0.0;
+      }
+
+      // 4b. HDF (Heat Dissipation Failure) == 1 -> Peça metálica fica vermelha quente / brasa incandescente!
+      if (machineState.HDF === 1) {
+        const emberPulse = (Math.sin(elapsed * 6.0) + 1.0) * 0.5;
+        workpieceMaterial.color.setHex(0xff4500);
+        workpieceMaterial.emissive.setHex(0xff2200);
+        workpieceMaterial.emissiveIntensity = 0.85 + emberPulse * 0.75;
+        workpieceMaterial.roughness = 0.55;
+        heatGlowLight.intensity = 2.5 + emberPulse * 2.0;
+      } else {
+        workpieceMaterial.color.setHex(0x64748b);
+        workpieceMaterial.emissive.setHex(0x000000);
+        workpieceMaterial.emissiveIntensity = 0.0;
+        workpieceMaterial.roughness = 0.35;
+        heatGlowLight.intensity = 0.0;
+      }
+
+      // 5. Atualiza fagulhas de corte ao redor da ponta da fresa
+      const positions = sparkParticles.geometry.attributes.position.array;
+      const toolTipWorldX = spindleCarriage.position.x;
+      const toolTipWorldY = spindleCarriage.position.y - 1.95;
+      const toolTipWorldZ = gantryGroup.position.z + spindleCarriage.position.z;
+
+      for (let i = 0; i < sparkCount; i++) {
+        const idx = i * 3;
+        const phase = (elapsed * 3.5 + i * 0.37) % 1.0;
+        const angle = i * 2.4 + elapsed * 4.0;
+        const radius = phase * (0.35 + torqueFactor * 0.35);
+
+        positions[idx] = toolTipWorldX + Math.cos(angle) * radius;
+        positions[idx + 1] = toolTipWorldY + Math.sin(phase * Math.PI) * 0.35 - phase * 0.25;
+        positions[idx + 2] = toolTipWorldZ + Math.sin(angle) * radius;
+      }
+      sparkParticles.geometry.attributes.position.needsUpdate = true;
+      sparkMat.color.setHex(machineState.HDF === 1 ? 0xff3b00 : 0xfbbf24);
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+
+    animate();
+
+    // Responsividade da janela
+    window.addEventListener('resize', () => {
+      camera.aspect = window.innerWidth / window.innerHeight;
+      camera.updateProjectionMatrix();
+      renderer.setSize(window.innerWidth, window.innerHeight);
+    });
+  </script>
+</body>
+</html>

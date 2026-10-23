@@ -1,0 +1,282 @@
+{
+  "assetAdministrationShells": [
+    {
+      "modelType": "AssetAdministrationShell",
+      "idShort": "MillingMachine_AI4I",
+      "id": "urn:ai4i:aas:milling-machine:001",
+      "description": [
+        {
+          "language": "pt-BR",
+          "text": "Asset Administration Shell (AAS) para Fresadora CNC baseada no AI4I 2020 Predictive Maintenance Dataset"
+        },
+        {
+          "language": "en",
+          "text": "Asset Administration Shell (AAS) for CNC Milling Machine based on the AI4I 2020 Predictive Maintenance Dataset"
+        }
+      ],
+      "assetInformation": {
+        "assetKind": "Instance",
+        "globalAssetId": "urn:ai4i:asset:milling-machine:001",
+        "assetType": "CNC_Vertical_Milling_Center",
+        "specificAssetIds": [
+          {
+            "name": "ProductID",
+            "value": "M14860"
+          },
+          {
+            "name": "SerialNumber",
+            "value": "AI4I-2020-CNC-001"
+          }
+        ]
+      },
+      "submodels": [
+        {
+          "type": "ModelReference",
+          "keys": [
+            {
+              "type": "Submodel",
+              "value": "urn:ai4i:submodel:operational-telemetry:001"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "submodels": [
+    {
+      "modelType": "Submodel",
+      "idShort": "AI4I_OperationalTelemetry",
+      "id": "urn:ai4i:submodel:operational-telemetry:001",
+      "kind": "Instance",
+      "semanticId": {
+        "type": "ExternalReference",
+        "keys": [
+          {
+            "type": "GlobalReference",
+            "value": "https://archive.ics.uci.edu/dataset/601/ai4i+2020+predictive+maintenance+dataset"
+          }
+        ]
+      },
+      "description": [
+        {
+          "language": "pt-BR",
+          "text": "Submodelo unificado de Identificação do Produto, Telemetria Dinâmica de Sensores e Diagnóstico de Falhas (AI4I 2020)"
+        }
+      ],
+      "submodelElements": [
+        {
+          "modelType": "Property",
+          "idShort": "UID",
+          "valueType": "xs:int",
+          "value": "1",
+          "category": "PARAMETER",
+          "description": [
+            {
+              "language": "en",
+              "text": "Unique identifier ranging from 1 to 10000"
+            }
+          ]
+        },
+        {
+          "modelType": "Property",
+          "idShort": "ProductID",
+          "valueType": "xs:string",
+          "value": "M14860",
+          "category": "PARAMETER",
+          "description": [
+            {
+              "language": "en",
+              "text": "Product ID consisting of a letter L, M, or H and a variant-specific serial number"
+            }
+          ]
+        },
+        {
+          "modelType": "Property",
+          "idShort": "Type",
+          "valueType": "xs:string",
+          "value": "M",
+          "category": "PARAMETER",
+          "description": [
+            {
+              "language": "en",
+              "text": "Product quality variant: L (Low - 50%), M (Medium - 30%), or H (High - 20%)"
+            }
+          ]
+        },
+        {
+          "modelType": "Property",
+          "idShort": "AirTemperature",
+          "valueType": "xs:double",
+          "value": "298.1",
+          "category": "VARIABLE",
+          "description": [
+            {
+              "language": "en",
+              "text": "Air temperature [K] generated using a random walk process normalized to a standard deviation of 2 K around 300 K"
+            }
+          ],
+          "semanticId": {
+            "type": "ExternalReference",
+            "keys": [
+              {
+                "type": "GlobalReference",
+                "value": "0173-1#02-AAB992#008"
+              }
+            ]
+          }
+        },
+        {
+          "modelType": "Property",
+          "idShort": "ProcessTemperature",
+          "valueType": "xs:double",
+          "value": "308.6",
+          "category": "VARIABLE",
+          "description": [
+            {
+              "language": "en",
+              "text": "Process temperature [K] generated using a random walk process normalized to a standard deviation of 1 K, added to the air temperature plus 10 K"
+            }
+          ]
+        },
+        {
+          "modelType": "Property",
+          "idShort": "RotationalSpeed",
+          "valueType": "xs:int",
+          "value": "1551",
+          "category": "VARIABLE",
+          "description": [
+            {
+              "language": "en",
+              "text": "Rotational speed [rpm] calculated from a power of 2860 W, overlaid with a normally distributed noise"
+            }
+          ]
+        },
+        {
+          "modelType": "Property",
+          "idShort": "Torque",
+          "valueType": "xs:double",
+          "value": "42.8",
+          "category": "VARIABLE",
+          "description": [
+            {
+              "language": "en",
+              "text": "Torque [Nm] normally distributed around 40 Nm with a SD = 10 Nm and no negative values"
+            }
+          ]
+        },
+        {
+          "modelType": "Property",
+          "idShort": "ToolWear",
+          "valueType": "xs:int",
+          "value": "0",
+          "category": "VARIABLE",
+          "description": [
+            {
+              "language": "en",
+              "text": "Tool wear [min] - The quality variants H/M/L add 5/3/2 minutes of tool wear to the used tool in the process"
+            }
+          ]
+        },
+        {
+          "modelType": "Property",
+          "idShort": "MachineFailure",
+          "valueType": "xs:int",
+          "value": "0",
+          "category": "VARIABLE",
+          "description": [
+            {
+              "language": "en",
+              "text": "Binary label (0 or 1) that indicates whether the machine has failed in this data point for any of the failure modes"
+            }
+          ]
+        },
+        {
+          "modelType": "Property",
+          "idShort": "TWF",
+          "valueType": "xs:int",
+          "value": "0",
+          "category": "VARIABLE",
+          "description": [
+            {
+              "language": "en",
+              "text": "Tool Wear Failure (TWF): tool is replaced or fails at a randomly selected tool wear time between 200 and 240 mins"
+            }
+          ]
+        },
+        {
+          "modelType": "Property",
+          "idShort": "HDF",
+          "valueType": "xs:int",
+          "value": "0",
+          "category": "VARIABLE",
+          "description": [
+            {
+              "language": "en",
+              "text": "Heat Dissipation Failure (HDF): process and air temperature difference is below 8.6 K and tool's rotational speed is below 1380 rpm"
+            }
+          ]
+        },
+        {
+          "modelType": "Property",
+          "idShort": "PWF",
+          "valueType": "xs:int",
+          "value": "0",
+          "category": "VARIABLE",
+          "description": [
+            {
+              "language": "en",
+              "text": "Power Failure (PWF): product of torque and rotational speed (in rad/s) is below 3500 W or above 9000 W"
+            }
+          ]
+        },
+        {
+          "modelType": "Property",
+          "idShort": "OSF",
+          "valueType": "xs:int",
+          "value": "0",
+          "category": "VARIABLE",
+          "description": [
+            {
+              "language": "en",
+              "text": "Overstrain Failure (OSF): product of tool wear and torque exceeds 11,000 minNm for L, 12,000 for M, or 13,000 for H"
+            }
+          ]
+        },
+        {
+          "modelType": "Property",
+          "idShort": "RNF",
+          "valueType": "xs:int",
+          "value": "0",
+          "category": "VARIABLE",
+          "description": [
+            {
+              "language": "en",
+              "text": "Random Failures (RNF): each process has a chance of 0.1% to fail regardless of its process parameters"
+            }
+          ]
+        },
+        {
+          "modelType": "Property",
+          "idShort": "MechanicalPower",
+          "valueType": "xs:double",
+          "value": "6951.4",
+          "category": "VARIABLE",
+          "description": [
+            {
+              "language": "en",
+              "text": "Calculated spindle mechanical power [W] = Torque [Nm] * (RotationalSpeed [rpm] * 2 * pi / 60)"
+            }
+          ]
+        },
+        {
+          "modelType": "Property",
+          "idShort": "LastUpdateTimestamp",
+          "valueType": "xs:string",
+          "value": "2026-10-22T00:00:00Z",
+          "category": "VARIABLE"
+        }
+      ]
+    }
+  ],
+  "conceptDescriptions": []
+}
