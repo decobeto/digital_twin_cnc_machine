@@ -339,7 +339,7 @@ class BaSyxAASClient:
         aas_descriptor = {
             "idShort": "MillingMachine_AI4I",
             "id": AAS_ID,
-            "GlobalAssetId": "urn:ai4i:asset:milling-machine:001",
+            "globalAssetId": "urn:ai4i:asset:milling-machine:001",
             "endpoints": [
                 {
                     "interface": "AAS-3.0",
@@ -350,10 +350,12 @@ class BaSyxAASClient:
                 }
             ],
         }
-        try:
-            self.session.post(f"{self.aas_registry_url}/shell-descriptors", json=aas_descriptor, timeout=1.5)
-        except requests.RequestException:
-            pass
+        self._register(
+            "AAS Registry",
+            f"{self.aas_registry_url}/shell-descriptors",
+            aas_descriptor,
+            update_url=f"{self.aas_registry_url}/shell-descriptors/{self.aas_id_b64}",
+        )
 
         # 2. Registra no Submodel Registry (8083)
         sm_descriptor = {
@@ -369,10 +371,12 @@ class BaSyxAASClient:
                 }
             ],
         }
-        try:
-            self.session.post(f"{self.sm_registry_url}/submodel-descriptors", json=sm_descriptor, timeout=1.5)
-        except requests.RequestException:
-            pass
+        self._register(
+            "Submodel Registry",
+            f"{self.sm_registry_url}/submodel-descriptors",
+            sm_descriptor,
+            update_url=f"{self.sm_registry_url}/submodel-descriptors/{self.submodel_id_b64}",
+        )
 
         # 3. Registra no Discovery Service (8084)
         discovery_endpoint = f"{self.discovery_url}/lookup/shells/{self.aas_id_b64}"
@@ -380,10 +384,33 @@ class BaSyxAASClient:
             {"name": "globalAssetId", "value": "urn:ai4i:asset:milling-machine:001"},
             {"name": "ProductID", "value": product_id},
         ]
+        self._register("Discovery", discovery_endpoint, payload)
+
+    def _register(self, service: str, url: str, payload: object, update_url: Optional[str] = None) -> None:
+        """
+        POST de registro com log do resultado. HTTP 409 significa que o recurso já existe:
+        se houver 'update_url', o descritor é atualizado via PUT; senão, apenas registra no log.
+        """
         try:
-            self.session.post(discovery_endpoint, json=payload, timeout=1.5)
-        except requests.RequestException:
-            pass
+            resp = self.session.post(url, json=payload, timeout=1.5)
+            if resp.status_code == 409 and update_url:
+                resp = self.session.put(update_url, json=payload, timeout=1.5)
+                action = "atualizado"
+            elif resp.status_code == 409:
+                logger.info("%s: já registrado (HTTP 409).", service)
+                return
+            else:
+                action = "registrado"
+
+            if resp.ok:
+                logger.info("%s: %s (HTTP %d).", service, action, resp.status_code)
+            else:
+                logger.warning(
+                    "%s: falha no registro (HTTP %d) em %s: %s",
+                    service, resp.status_code, resp.url, resp.text[:300],
+                )
+        except requests.RequestException as exc:
+            logger.warning("%s: indisponível em %s (%s).", service, url, exc)
 
     def update_property_value(self, id_short: str, value: object) -> bool:
         """
